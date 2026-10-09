@@ -115,15 +115,10 @@ function App() {
   const dueTodayCount = tasks.filter((task) => task.dueDate === today && task.status !== 'done').length
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'
   const metrics = [
-    { label: 'Total tasks', value: tasks.length, icon: ListTodo, tone: 'violet' },
-    { label: 'In progress', value: tasks.filter((task) => task.status === 'doing').length, icon: Clock3, tone: 'blue' },
-    { label: 'Completed', value: tasks.filter((task) => task.status === 'done').length, icon: CheckCheck, tone: 'green' },
-    {
-      label: 'Overdue',
-      value: tasks.filter((task) => task.status !== 'done' && task.dueDate && task.dueDate < today).length,
-      icon: CalendarDays,
-      tone: 'amber',
-    },
+    { label: 'Total', value: tasks.length, icon: ListTodo, tone: 'violet' },
+    { label: 'Todo', value: tasks.filter((task) => task.status === 'todo').length, icon: Circle, tone: 'amber' },
+    { label: 'Doing', value: tasks.filter((task) => task.status === 'doing').length, icon: Clock3, tone: 'blue' },
+    { label: 'Done', value: tasks.filter((task) => task.status === 'done').length, icon: CheckCheck, tone: 'green' },
   ]
 
   function addTask(event) {
