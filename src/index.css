@@ -1,0 +1,70 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #45465a;
+  background: #f7f7fb;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --heading: #26243a;
+  --text: #55566a;
+  --muted: #77798f;
+  --accent: #7659e8;
+  --accent-soft: #f0edff;
+  --accent-line: #dcd4ff;
+  --line: rgb(113 108 145 / 13%);
+  --surface: rgb(255 255 255 / 88%);
+  --surface-soft: rgb(248 248 252 / 78%);
+  --surface-hover: rgb(246 244 255 / 72%);
+  --glass: rgb(255 255 255 / 78%);
+  --modal-bg: rgb(255 255 255 / 97%);
+  --topbar-bg: rgb(255 255 255 / 68%);
+  --card-shadow: 0 7px 24px rgb(50 42 92 / 4%);
+  --card-shadow-hover: 0 12px 28px rgb(50 42 92 / 9%);
+}
+
+:root[data-theme='dark'] {
+  color: #c9c8d6;
+  background: #15141e;
+  color-scheme: dark;
+  --heading: #f0eef8;
+  --text: #c2c0d0;
+  --muted: #aaa8bb;
+  --accent: #ad98ff;
+  --accent-soft: #332c4c;
+  --accent-line: #574980;
+  --line: rgb(195 185 232 / 14%);
+  --surface: rgb(35 33 48 / 94%);
+  --surface-soft: rgb(37 35 50 / 88%);
+  --surface-hover: rgb(49 45 66 / 78%);
+  --glass: rgb(31 29 43 / 82%);
+  --modal-bg: rgb(32 30 45 / 98%);
+  --topbar-bg: rgb(23 22 33 / 77%);
+  --card-shadow: 0 7px 24px rgb(0 0 0 / 16%);
+  --card-shadow-hover: 0 12px 28px rgb(0 0 0 / 26%);
+}
+
+* { box-sizing: border-box; }
+html { min-width: 320px; min-height: 100%; background: #f7f7fb; }
+html[data-theme='dark'] { background: #15141e; }
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(ellipse at 9% 4%, rgb(228 221 255 / 44%), transparent 29rem),
+    radial-gradient(ellipse at 92% 34%, rgb(220 235 255 / 36%), transparent 31rem),
+    #f7f7fb;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+html[data-theme='dark'] body {
+  background:
+    radial-gradient(ellipse at 9% 4%, rgb(72 53 121 / 21%), transparent 29rem),
+    radial-gradient(ellipse at 92% 34%, rgb(38 58 93 / 20%), transparent 31rem),
+    #15141e;
+}
+button, input, select { font: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+::selection { color: #fff; background: #7659e8; }
