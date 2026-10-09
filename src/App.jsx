@@ -6,6 +6,8 @@ import {
   CheckCheck,
   Circle,
   ClipboardList,
+  Copy,
+  Download,
   Clock3,
   ListTodo,
   Moon,
@@ -73,6 +75,9 @@ function App() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [sortBy, setSortBy] = useState('due')
+  const [dateScope, setDateScope] = useState('all')
+  const [selectedIds, setSelectedIds] = useState([])
+  const [recentlyDeleted, setRecentlyDeleted] = useState(null)
 
   useEffect(() => {
     try {
@@ -91,13 +96,26 @@ function App() {
     }
   }, [theme])
 
+  useEffect(() => {
+    if (!recentlyDeleted) return undefined
+    const timer = window.setTimeout(() => setRecentlyDeleted(null), 7000)
+    return () => window.clearTimeout(timer)
+  }, [recentlyDeleted])
+
+  const today = new Date()
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
   const visibleTasks = useMemo(() => {
     const query = search.trim().toLowerCase()
     const filtered = tasks.filter((task) => {
       const matchesSearch = !query || task.title.toLowerCase().includes(query)
       const matchesStatus = statusFilter === 'all' || task.status === statusFilter
       const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter
-      return matchesSearch && matchesStatus && matchesPriority
+      const isOpen = task.status !== 'done'
+      const matchesDate = dateScope === 'all'
+        || (dateScope === 'today' && task.dueDate === todayKey)
+        || (dateScope === 'upcoming' && isOpen && task.dueDate > todayKey)
+        || (dateScope === 'overdue' && isOpen && task.dueDate && task.dueDate < todayKey)
+      return matchesSearch && matchesStatus && matchesPriority && matchesDate
     })
     const priorityRank = { high: 0, med: 1, low: 2 }
     return filtered.sort((first, second) => {
@@ -107,12 +125,11 @@ function App() {
       if (!second.dueDate) return -1
       return first.dueDate.localeCompare(second.dueDate)
     })
-  }, [tasks, search, statusFilter, priorityFilter, sortBy])
+  }, [tasks, search, statusFilter, priorityFilter, sortBy, dateScope, todayKey])
 
-  const today = new Date().toISOString().slice(0, 10)
   const completedCount = tasks.filter((task) => task.status === 'done').length
   const completionPercent = tasks.length ? Math.round((completedCount / tasks.length) * 100) : 0
-  const dueTodayCount = tasks.filter((task) => task.dueDate === today && task.status !== 'done').length
+  const dueTodayCount = tasks.filter((task) => task.dueDate === todayKey && task.status !== 'done').length
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'
   const metrics = [
     { label: 'Total', value: tasks.length, icon: ListTodo, tone: 'violet' },
@@ -120,6 +137,12 @@ function App() {
     { label: 'Doing', value: tasks.filter((task) => task.status === 'doing').length, icon: Clock3, tone: 'blue' },
     { label: 'Done', value: tasks.filter((task) => task.status === 'done').length, icon: CheckCheck, tone: 'green' },
   ]
+  const dateScopeCounts = {
+    all: tasks.length,
+    today: tasks.filter((task) => task.dueDate === todayKey).length,
+    upcoming: tasks.filter((task) => task.status !== 'done' && task.dueDate > todayKey).length,
+    overdue: tasks.filter((task) => task.status !== 'done' && task.dueDate && task.dueDate < todayKey).length,
+  }
 
   function addTask(event) {
     event.preventDefault()
@@ -145,23 +168,66 @@ function App() {
   }
 
   function deleteTask(task) {
-    setPendingDelete(task)
+    setPendingDelete([task])
   }
 
   function confirmDelete() {
     if (!pendingDelete) return
-    const deletedId = pendingDelete.id
-    setTasks((current) => current.filter((item) => item.id !== deletedId))
-    if (editingId === deletedId) {
+    const deletedIds = new Set(pendingDelete.map((task) => task.id))
+    setTasks((current) => current.filter((item) => !deletedIds.has(item.id)))
+    setRecentlyDeleted(pendingDelete)
+    setSelectedIds((current) => current.filter((id) => !deletedIds.has(id)))
+    if (deletedIds.has(editingId)) {
       setEditingId(null)
       setDraft(null)
     }
     setPendingDelete(null)
   }
 
+  function undoDelete() {
+    if (!recentlyDeleted) return
+    setTasks((current) => {
+      const currentIds = new Set(current.map((task) => task.id))
+      return [...recentlyDeleted.filter((task) => !currentIds.has(task.id)), ...current]
+    })
+    setRecentlyDeleted(null)
+  }
+
   function toggleStatus(task) {
     const nextStatus = { todo: 'doing', doing: 'done', done: 'todo' }
     setTasks((current) => current.map((item) => (item.id === task.id ? { ...item, status: nextStatus[item.status] } : item)))
+  }
+
+  function duplicateTask(task) {
+    const id = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
+    setTasks((current) => [{ ...task, id, title: `${task.title} (copy)`, status: 'todo' }, ...current])
+  }
+
+  function toggleVisibleSelection(shouldSelect) {
+    const visibleIds = new Set(visibleTasks.map((task) => task.id))
+    setSelectedIds((current) => shouldSelect
+      ? [...new Set([...current, ...visibleIds])]
+      : current.filter((id) => !visibleIds.has(id)))
+  }
+
+  function completeSelected() {
+    const selected = new Set(selectedIds)
+    setTasks((current) => current.map((task) => selected.has(task.id) ? { ...task, status: 'done' } : task))
+    setSelectedIds([])
+  }
+
+  function exportTasks() {
+    const columns = ['title', 'priority', 'status', 'dueDate']
+    const escapeCell = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`
+    const csv = [columns, ...tasks.map((task) => columns.map((column) => task[column] ?? ''))]
+      .map((row) => row.map(escapeCell).join(','))
+      .join('\r\n')
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `taskflow-${todayKey}.csv`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   return (
@@ -208,7 +274,7 @@ function App() {
             <article className="metric-card glass-card" key={label}>
               <div className={`metric-icon ${tone}`}><Icon size={19} /></div>
               <div className="metric-copy"><span>{label}</span><strong>{value}</strong></div>
-              {label === 'Completed' && tasks.length > 0 && <span className="metric-note">{completionPercent}% of all</span>}
+              {label === 'Done' && tasks.length > 0 && <span className="metric-note">{completionPercent}% of all</span>}
             </article>
           ))}
         </section>
@@ -219,7 +285,23 @@ function App() {
               <p className="eyebrow">STAY ON TRACK</p>
               <h2 id="tasks-heading">Your tasks <span className="task-count">{tasks.length}</span></h2>
             </div>
-            <button className="secondary-button heading-add" type="button" onClick={() => setIsModalOpen(true)}><Plus size={16} /> New task</button>
+            <div className="heading-actions">
+              <button className="secondary-button export-button" type="button" onClick={exportTasks} disabled={tasks.length === 0} title="Export tasks as CSV"><Download size={16} /> Export CSV</button>
+              <button className="secondary-button heading-add" type="button" onClick={() => setIsModalOpen(true)}><Plus size={16} /> New task</button>
+            </div>
+          </div>
+
+          <div className="date-scopes" role="group" aria-label="Tasks by due date">
+            {[
+              { key: 'all', label: 'All tasks' },
+              { key: 'today', label: 'Today' },
+              { key: 'upcoming', label: 'Upcoming' },
+              { key: 'overdue', label: 'Overdue' },
+            ].map(({ key, label }) => (
+              <button className={`date-scope ${dateScope === key ? 'is-active' : ''}`} type="button" aria-pressed={dateScope === key} key={key} onClick={() => setDateScope(key)}>
+                {label}<span>{dateScopeCounts[key]}</span>
+              </button>
+            ))}
           </div>
 
           <div className="filter-bar">
@@ -236,15 +318,26 @@ function App() {
             </div>
           </div>
 
+          {selectedIds.length > 0 && <div className="bulk-toolbar" role="region" aria-label="Bulk task actions">
+            <strong>{selectedIds.length} selected</strong>
+            <button type="button" onClick={completeSelected}><CheckCheck size={15} /> Mark done</button>
+            <button type="button" className="bulk-delete" onClick={() => setPendingDelete(tasks.filter((task) => selectedIds.includes(task.id)))}><Trash2 size={15} /> Delete</button>
+            <button type="button" className="bulk-clear" onClick={() => setSelectedIds([])}>Clear selection</button>
+          </div>}
+
           <div className="task-list glass-card">
             {visibleTasks.length > 0 ? (
               <>
-                <div className="task-list-head"><span>Task</span><span>Priority</span><span>Status</span><span>Due date</span><span className="sr-only">Actions</span></div>
+                <div className="task-list-head">
+                  <label className="select-visible"><input type="checkbox" aria-label="Select all visible tasks" checked={visibleTasks.length > 0 && visibleTasks.every((task) => selectedIds.includes(task.id))} onChange={(event) => toggleVisibleSelection(event.target.checked)} /></label>
+                  <span>Task</span><span>Priority</span><span>Status</span><span>Due date</span><span className="sr-only">Actions</span>
+                </div>
                 {visibleTasks.map((task) => {
                   const isEditing = editingId === task.id
                   const taskData = isEditing ? draft : task
                   return (
                     <form className={`task-row ${isEditing ? 'is-editing' : ''}`} key={task.id} onSubmit={isEditing ? saveEdit : (event) => event.preventDefault()}>
+                      <div className="task-selection"><input className="task-checkbox" type="checkbox" aria-label={`Select ${task.title}`} checked={selectedIds.includes(task.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, task.id] : current.filter((id) => id !== task.id))} /></div>
                       <div className="task-title-cell">
                         <button className={`completion-button ${task.status === 'done' ? 'is-complete' : ''}`} type="button" aria-label={`Move ${task.title} to ${task.status === 'todo' ? 'in progress' : task.status === 'doing' ? 'done' : 'to do'}`} onClick={() => toggleStatus(task)}>
                           {task.status === 'done' ? <Check size={14} /> : task.status === 'doing' ? <span className="completion-dash" /> : <Circle size={17} />}
@@ -253,9 +346,9 @@ function App() {
                       </div>
                       <div className="task-priority-cell">{isEditing ? <select aria-label="Priority" className="inline-select" value={taskData.priority} onChange={(event) => setDraft({ ...taskData, priority: event.target.value })}><option value="low">Low</option><option value="med">Medium</option><option value="high">High</option></select> : <span className={`priority-badge ${task.priority}`}>{task.priority === 'med' ? 'Medium' : task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}</span>}</div>
                       <div className="task-status-cell">{isEditing ? <select aria-label="Status" className="inline-select" value={taskData.status} onChange={(event) => setDraft({ ...taskData, status: event.target.value })}><option value="todo">To do</option><option value="doing">In progress</option><option value="done">Done</option></select> : <button className={`status-badge ${task.status}`} type="button" onClick={() => toggleStatus(task)} title="Click to change status"><span />{task.status === 'todo' ? 'To do' : task.status === 'doing' ? 'In progress' : 'Done'}</button>}</div>
-                      <div className="task-date-cell">{isEditing ? <input aria-label="Due date" className="inline-input date-input" type="date" value={taskData.dueDate || ''} onChange={(event) => setDraft({ ...taskData, dueDate: event.target.value })} /> : <span className={!task.dueDate ? 'no-date' : task.status !== 'done' && task.dueDate < today ? 'overdue-date' : ''}>{task.dueDate && <CalendarDays size={14} />}{formatDate(task.dueDate)}</span>}</div>
+                      <div className="task-date-cell">{isEditing ? <input aria-label="Due date" className="inline-input date-input" type="date" value={taskData.dueDate || ''} onChange={(event) => setDraft({ ...taskData, dueDate: event.target.value })} /> : <span className={!task.dueDate ? 'no-date' : task.status !== 'done' && task.dueDate < todayKey ? 'overdue-date' : ''}>{task.dueDate && <CalendarDays size={14} />}{formatDate(task.dueDate)}</span>}</div>
                       <div className="task-actions">
-                        {isEditing ? <><button className="row-action save-action" type="submit" aria-label="Save changes" title="Save"><Check size={16} /></button><button className="row-action" type="button" aria-label="Cancel editing" title="Cancel" onClick={() => { setEditingId(null); setDraft(null) }}><X size={16} /></button></> : <><button className="row-action" type="button" aria-label={`Edit ${task.title}`} title="Edit task" onClick={() => startEditing(task)}><span className="edit-glyph">✎</span></button><button className="row-action delete-action" type="button" aria-label={`Delete ${task.title}`} title="Delete task" onClick={() => deleteTask(task)}><Trash2 size={15} /></button></>}
+                        {isEditing ? <><button className="row-action save-action" type="submit" aria-label="Save changes" title="Save"><Check size={16} /></button><button className="row-action" type="button" aria-label="Cancel editing" title="Cancel" onClick={() => { setEditingId(null); setDraft(null) }}><X size={16} /></button></> : <><button className="row-action" type="button" aria-label={`Duplicate ${task.title}`} title="Duplicate task" onClick={() => duplicateTask(task)}><Copy size={15} /></button><button className="row-action" type="button" aria-label={`Edit ${task.title}`} title="Edit task" onClick={() => startEditing(task)}><span className="edit-glyph">✎</span></button><button className="row-action delete-action" type="button" aria-label={`Delete ${task.title}`} title="Delete task" onClick={() => deleteTask(task)}><Trash2 size={15} /></button></>}
                       </div>
                     </form>
                   )
@@ -267,7 +360,7 @@ function App() {
                 <h3>{tasks.length === 0 ? 'A fresh start.' : 'No tasks found'}</h3>
                 <p>{tasks.length === 0 ? 'Your to-do list is looking nice and clear. Add a task to get the ball rolling.' : 'Try adjusting your search or filters to find what you’re looking for.'}</p>
                 {tasks.length === 0 && <button className="primary-button" type="button" onClick={() => setIsModalOpen(true)}><Plus size={17} /> Add your first task</button>}
-                {(search || statusFilter !== 'all' || priorityFilter !== 'all') && tasks.length > 0 && <button className="text-button" type="button" onClick={() => { setSearch(''); setStatusFilter('all'); setPriorityFilter('all') }}>Clear filters</button>}
+                {(search || statusFilter !== 'all' || priorityFilter !== 'all' || dateScope !== 'all') && tasks.length > 0 && <button className="text-button" type="button" onClick={() => { setSearch(''); setStatusFilter('all'); setPriorityFilter('all'); setDateScope('all') }}>Clear filters</button>}
               </div>
             )}
             {visibleTasks.length > 0 && <div className="list-footer"><span>Showing {visibleTasks.length} of {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}</span><span><span className="live-dot" /> Saved automatically</span></div>}
@@ -291,10 +384,16 @@ function App() {
       {pendingDelete && <div className="modal-backdrop delete-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPendingDelete(null) }}>
         <section className="delete-dialog glass-card" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-description">
           <div className="delete-icon"><Trash2 size={20} /></div>
-          <h2 id="delete-title">Delete this task?</h2>
-          <p id="delete-description"><strong>{pendingDelete.title}</strong> will be removed from your list. This can’t be undone.</p>
+          <h2 id="delete-title">{pendingDelete.length === 1 ? 'Delete this task?' : `Delete ${pendingDelete.length} tasks?`}</h2>
+          <p id="delete-description"><strong>{pendingDelete.length === 1 ? pendingDelete[0].title : `${pendingDelete.length} selected tasks`}</strong> will be removed from your list. You can undo this for a short time.</p>
           <div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setPendingDelete(null)}>Keep task</button><button className="danger-button" type="button" onClick={confirmDelete}><Trash2 size={15} /> Delete task</button></div>
         </section>
+      </div>}
+
+      {recentlyDeleted && <div className="undo-toast" role="status" aria-live="polite">
+        <span>{recentlyDeleted.length === 1 ? 'Task deleted' : `${recentlyDeleted.length} tasks deleted`}</span>
+        <button type="button" onClick={undoDelete}>Undo</button>
+        <button className="toast-dismiss" type="button" aria-label="Dismiss undo message" onClick={() => setRecentlyDeleted(null)}><X size={16} /></button>
       </div>}
     </main>
   )
